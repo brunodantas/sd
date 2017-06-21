@@ -2,10 +2,11 @@
 
 import glob
 import sys
-import pickle
+# import pickle
 import os.path
 import time
 import threading
+from rwlock.rwlock import RWLock
 sys.path.append('gen-py')
 sys.path.insert(0, glob.glob('./lib*')[0])
 from graph import Graph
@@ -20,139 +21,183 @@ from thrift.server import TServer
 class GraphHandler:
 	def __init__(self):
 		self.log = {}
-		if os.path.isfile("graph.pickle"):
-			with open('graph.pickle', 'rb') as f:
-				self.al = pickle.load(f)
-			print("loaded data from graph.pickle")
-		else:
-			self.al = dict()
-			with open('graph.pickle', 'wb') as f:
-				pickle.dump(self.al,f)
-			print("created graph.pickle")
+		self.al = dict() #adjacency list
 		self.lock = threading.Lock()
+		self.rwlock = RWLock()
+		# if os.path.isfile("graph.pickle"):
+		# 	with open('graph.pickle', 'rb') as f:
+		# 		self.al = pickle.load(f)
+		# 	print("loaded data from graph.pickle")
+		# else:
+		# 	self.al = dict()
+		# 	with open('graph.pickle', 'wb') as f:
+		# 		pickle.dump(self.al,f)
+		# 	print("created graph.pickle")
 
 
 	def ping(self):
 		print('ping()')
 
 	def add_upd_vertex(self, nome, cor, desc, peso):
-		with self.lock:
-			if nome not in self.al:
-				self.al[nome] = Vertex(nome, cor, desc, peso)
-				res = "vertice criado"
-			else:
-				self.al[nome].set_att(nome, cor, desc, peso)
-				res = "vertice alterado"
+		self.rwlock.acquire_write()
 
-			with open('graph.pickle', 'wb') as f:
-				pickle.dump(self.al,f)
-			return res
+		if nome not in self.al:
+			self.al[nome] = Vertex(nome, cor, desc, peso)
+			res = "vertice criado"
+		else:
+			self.al[nome].set_att(nome, cor, desc, peso)
+			res = "vertice alterado"
+
+		# with open('graph.pickle', 'wb') as f:
+		# 	pickle.dump(self.al,f)
+		self.rwlock.release()
+
+		return res
 
 	def add_upd_edge(self, v1, v2, peso, bi_flag):
-		with self.lock:
-			if v1 not in self.al or v2 not in self.al:
-				x = NotFound()
-				x.dsc = "vertice não encontrado"
-				raise x
+		self.rwlock.acquire_write()
 
-			ver1 = self.al[v1]
-			ver2 = self.al[v2]
-			if v2 not in ver1.edges_out:
-				ver1.edges_out[v2] = Edge(v1, v2, peso, bi_flag)
-				ver2.edges_in[v1] = ver1.edges_out[v2]
-				res = "aresta criada"
-			else:
-				ver1.edges_out[v2].set_att(v1, v2, peso, bi_flag)
-				res = "aresta alterada"
-			if bi_flag:
-					ver1.edges_in[v2] = ver1.edges_out[v2]
-					ver2.edges_out[v1] = ver1.edges_out[v2]
-			with open('graph.pickle', 'wb') as f:
-					pickle.dump(self.al,f)
-			return res
+		if v1 not in self.al or v2 not in self.al:
+			x = NotFound()
+			x.dsc = "vertice não encontrado"
+			self.rwlock.release()
+			raise x
+
+		ver1 = self.al[v1]
+		ver2 = self.al[v2]
+		if v2 not in ver1.edges_out:
+			ver1.edges_out[v2] = Edge(v1, v2, peso, bi_flag)
+			ver2.edges_in[v1] = ver1.edges_out[v2]
+			res = "aresta criada"
+		else:
+			ver1.edges_out[v2].set_att(v1, v2, peso, bi_flag)
+			res = "aresta alterada"
+		if bi_flag:
+				ver1.edges_in[v2] = ver1.edges_out[v2]
+				ver2.edges_out[v1] = ver1.edges_out[v2]
+		# with open('graph.pickle', 'wb') as f:
+		# 		pickle.dump(self.al,f)
+
+		self.rwlock.release()
+
+		return res
 
 	def get_vertex(self, v):
-		with self.lock:
-			#time.sleep(5)
-			if v not in self.al:
-				x = NotFound()
-				x.dsc = "vertice não encontrado"
-				raise x
-			return str(self.al[v])
+		self.rwlock.acquire_read()
+
+		#time.sleep(5)
+		if v not in self.al:
+			x = NotFound()
+			x.dsc = "vertice não encontrado"
+			self.rwlock.release()
+			raise x
+
+		self.rwlock.release()
+		return str(self.al[v])
 
 	def get_edge(self, v1, v2):
-		with self.lock:
-			if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
-				x = NotFound()
-				x.dsc = "aresta não encontrada"
-				raise x
-			return str(self.al[v1].edges_out[v2])
+		self.rwlock.acquire_read()
+
+		if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
+			x = NotFound()
+			x.dsc = "aresta não encontrada"
+			self.rwlock.release()
+			raise x
+
+		self.rwlock.release()
+		return str(self.al[v1].edges_out[v2])
 
 	def del_vertex(self, v):
-		with self.lock:
-			if v not in self.al:
-				x = NotFound()
-				x.dsc = "vertice não encontrado"
-				raise x
+		self.rwlock.acquire_read()
 
-			ver = self.al[v]
-			outs = [x for x in ver.edges_out]
-			ins = [x for x in ver.edges_in]
-			for o in outs:
-				try:
-					self.del_edge(v,o)
-				except:
-					pass
-			for i in ins:
-				try:
-					self.del_edge(i,v)
-				except:
-					pass
-			del self.al[v]
-			with open('graph.pickle', 'wb') as f:
-					pickle.dump(self.al,f)
-			return "vertice deletado"
+		if v not in self.al:
+			x = NotFound()
+			x.dsc = "vertice não encontrado"
+			self.rwlock.release()
+			raise x
+
+		self.rwlock.release()
+		self.rwlock.acquire_write()
+
+		ver = self.al[v]
+		outs = [x for x in ver.edges_out]
+		ins = [x for x in ver.edges_in]
+		for o in outs:
+			try:
+				self.del_edge(v,o)
+			except:
+				pass
+		for i in ins:
+			try:
+				self.del_edge(i,v)
+			except:
+				pass
+		del self.al[v]
+		# with open('graph.pickle', 'wb') as f:
+		# 		pickle.dump(self.al,f)
+
+		self.rwlock.release()
+		return "vertice deletado"
 
 	def del_edge(self, v1, v2):
-		with self.lock:
-			if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
-				x = NotFound()
-				x.dsc = "aresta não encontrada"
-				raise x
-			bi = self.al[v1].edges_out[v2].bi_flag
-			del self.al[v1].edges_out[v2]
-			del self.al[v2].edges_in[v1]
-			if bi:
-				del self.al[v2].edges_out[v1]
-				del self.al[v1].edges_in[v2]
-			with open('graph.pickle', 'wb') as f:
-					pickle.dump(self.al,f)
-			return "aresta deletada"
+		self.rwlock.acquire_read()
+
+		if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
+			x = NotFound()
+			x.dsc = "aresta não encontrada"
+			self.rwlock.release()
+			raise x
+
+		self.rwlock.release()
+		self.rwlock.acquire_write()
+
+		bi = self.al[v1].edges_out[v2].bi_flag
+		del self.al[v1].edges_out[v2]
+		del self.al[v2].edges_in[v1]
+		if bi:
+			del self.al[v2].edges_out[v1]
+			del self.al[v1].edges_in[v2]
+		# with open('graph.pickle', 'wb') as f:
+		# 		pickle.dump(self.al,f)
+
+		self.rwlock.release()
+		return "aresta deletada"
 
 	def list_edges(self, v):
-		with self.lock:
-			if v not in self.al:
-				x = NotFound()
-				x.dsc = "vertice não encontrado"
-				raise x
+		self.rwlock.acquire_read()
 
-			return str([self.al[v].edges_out[x] for x in self.al[v].edges_out])
+		if v not in self.al:
+			x = NotFound()
+			x.dsc = "vertice não encontrado"
+			self.rwlock.release()
+			raise x
+
+		self.rwlock.release()
+		return str([self.al[v].edges_out[x] for x in self.al[v].edges_out])
 
 	def list_vertices(self, v1, v2):
-		with self.lock:
-			if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
-				x = NotFound()
-				x.dsc = "aresta não encontrada"
-				raise x
-			return str((self.al[v1], self.al[v2]))
+		self.rwlock.acquire_read()
+
+		if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
+			x = NotFound()
+			x.dsc = "aresta não encontrada"
+			self.rwlock.release()
+			raise x
+
+		self.rwlock.release()
+		return str((self.al[v1], self.al[v2]))
 
 	def list_neighbors(self, v):
-		with self.lock:
-			if v not in self.al:
-				x = NotFound()
-				x.dsc = "vertice não encontrado"
-				raise x
-			return str([self.al[x] for x in self.al[v].edges_out])
+		self.rwlock.acquire_read()
+
+		if v not in self.al:
+			x = NotFound()
+			x.dsc = "vertice não encontrado"
+			self.rwlock.release()
+			raise x
+
+		self.rwlock.release()
+		return str([self.al[x] for x in self.al[v].edges_out])
 
 
 class Vertex:

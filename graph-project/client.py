@@ -17,7 +17,7 @@ from thrift.protocol import TBinaryProtocol
 try: input = raw_input
 except NameError: pass
 
-opt = "0 client.ping()\n1 client.add_upd_vertex( nome, cor, desc, peso)\n2 client.add_upd_edge( v1, v2, peso, bi_flag)\n3 client.get_vertex( v)\n4 client.get_edge( v1, v2)\n5 client.del_vertex( v)\n6 client.del_edge( v1, v2)\n7 client.list_edges( v)\n8 client.list_vertices( v1, v2)\n9 client.list_neighbors( v)\n\n"
+opt = "\n0 client.ping()\n1 client.add_upd_vertex( nome, cor, desc, peso)\n2 client.add_upd_edge( v1, v2, peso, bi_flag)\n3 client.get_vertex( v)\n4 client.get_edge( v1, v2)\n5 client.del_vertex( v)\n6 client.del_edge( v1, v2)\n7 client.list_edges( v)\n8 client.list_vertices( v1, v2)\n9 client.list_neighbors( v)\n\n"
 
 def main():
 

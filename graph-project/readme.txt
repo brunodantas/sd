@@ -10,3 +10,4 @@ generate files from thrift:
 thrift -r --gen py a.thrift
 
 
+rwlock implementation took from https://majid.info/blog/a-reader-writer-lock-for-python

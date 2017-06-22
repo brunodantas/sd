@@ -20,9 +20,9 @@ except NameError: pass
 opt = "\n0 client.ping()\n1 client.add_upd_vertex( nome, cor, desc, peso)\n2 client.add_upd_edge( v1, v2, peso, bi_flag)\n3 client.get_vertex( v)\n4 client.get_edge( v1, v2)\n5 client.del_vertex( v)\n6 client.del_edge( v1, v2)\n7 client.list_edges( v)\n8 client.list_vertices( v1, v2)\n9 client.list_neighbors( v)\n\n"
 
 def main():
-
+	p = sys.argv[1]
 	# Make socket
-	transport = TSocket.TSocket('localhost', 9090)
+	transport = TSocket.TSocket('localhost', p)
 
 	# Buffering is critical. Raw sockets are very slow
 	transport = TTransport.TBufferedTransport(transport)
@@ -37,7 +37,9 @@ def main():
 	transport.open()
 	client.ping()
 	f = [client.ping,client.add_upd_vertex,client.add_upd_edge,client.get_vertex,client.get_edge,client.del_vertex,client.del_edge,client.list_edges,client.list_vertices,client.list_neighbors]
-
+	print(client.add_upd_vertex(1,1,"1",1))
+	print(client.add_upd_vertex(2,2,"2",2))
+	print(client.add_upd_edge(2,1,1.0,True))
 	while 1:
 		choice = input(opt)
 		choice = int(choice)
@@ -54,7 +56,7 @@ def main():
 			args[3] = float(args[3])
 		elif choice == 2:
 			args[2] = float(args[2])
-			args[3] = bool(args[3])
+			args[3] = bool(int(args[3]))
 		try:
 			print(f[choice](*args))
 			print('\n')

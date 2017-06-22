@@ -39,6 +39,17 @@ class Iface(object):
         """
         pass
 
+    def add_upd_edge2(self, v1, v2, peso, bi_flag, first_flag):
+        """
+        Parameters:
+         - v1
+         - v2
+         - peso
+         - bi_flag
+         - first_flag
+        """
+        pass
+
     def get_vertex(self, nome):
         """
         Parameters:
@@ -88,6 +99,16 @@ class Iface(object):
         """
         Parameters:
          - nome
+        """
+        pass
+
+    def add_edge_in(self, v1, v2, peso, bi_flag):
+        """
+        Parameters:
+         - v1
+         - v2
+         - peso
+         - bi_flag
         """
         pass
 
@@ -158,6 +179,8 @@ class Client(Iface):
         iprot.readMessageEnd()
         if result.success is not None:
             return result.success
+        if result.ex is not None:
+            raise result.ex
         raise TApplicationException(TApplicationException.MISSING_RESULT, "add_upd_vertex failed: unknown result")
 
     def add_upd_edge(self, v1, v2, peso, bi_flag):
@@ -198,6 +221,47 @@ class Client(Iface):
         if result.ex is not None:
             raise result.ex
         raise TApplicationException(TApplicationException.MISSING_RESULT, "add_upd_edge failed: unknown result")
+
+    def add_upd_edge2(self, v1, v2, peso, bi_flag, first_flag):
+        """
+        Parameters:
+         - v1
+         - v2
+         - peso
+         - bi_flag
+         - first_flag
+        """
+        self.send_add_upd_edge2(v1, v2, peso, bi_flag, first_flag)
+        return self.recv_add_upd_edge2()
+
+    def send_add_upd_edge2(self, v1, v2, peso, bi_flag, first_flag):
+        self._oprot.writeMessageBegin('add_upd_edge2', TMessageType.CALL, self._seqid)
+        args = add_upd_edge2_args()
+        args.v1 = v1
+        args.v2 = v2
+        args.peso = peso
+        args.bi_flag = bi_flag
+        args.first_flag = first_flag
+        args.write(self._oprot)
+        self._oprot.writeMessageEnd()
+        self._oprot.trans.flush()
+
+    def recv_add_upd_edge2(self):
+        iprot = self._iprot
+        (fname, mtype, rseqid) = iprot.readMessageBegin()
+        if mtype == TMessageType.EXCEPTION:
+            x = TApplicationException()
+            x.read(iprot)
+            iprot.readMessageEnd()
+            raise x
+        result = add_upd_edge2_result()
+        result.read(iprot)
+        iprot.readMessageEnd()
+        if result.success is not None:
+            return result.success
+        if result.ex is not None:
+            raise result.ex
+        raise TApplicationException(TApplicationException.MISSING_RESULT, "add_upd_edge2 failed: unknown result")
 
     def get_vertex(self, nome):
         """
@@ -436,6 +500,43 @@ class Client(Iface):
             raise result.ex
         raise TApplicationException(TApplicationException.MISSING_RESULT, "list_neighbors failed: unknown result")
 
+    def add_edge_in(self, v1, v2, peso, bi_flag):
+        """
+        Parameters:
+         - v1
+         - v2
+         - peso
+         - bi_flag
+        """
+        self.send_add_edge_in(v1, v2, peso, bi_flag)
+        return self.recv_add_edge_in()
+
+    def send_add_edge_in(self, v1, v2, peso, bi_flag):
+        self._oprot.writeMessageBegin('add_edge_in', TMessageType.CALL, self._seqid)
+        args = add_edge_in_args()
+        args.v1 = v1
+        args.v2 = v2
+        args.peso = peso
+        args.bi_flag = bi_flag
+        args.write(self._oprot)
+        self._oprot.writeMessageEnd()
+        self._oprot.trans.flush()
+
+    def recv_add_edge_in(self):
+        iprot = self._iprot
+        (fname, mtype, rseqid) = iprot.readMessageBegin()
+        if mtype == TMessageType.EXCEPTION:
+            x = TApplicationException()
+            x.read(iprot)
+            iprot.readMessageEnd()
+            raise x
+        result = add_edge_in_result()
+        result.read(iprot)
+        iprot.readMessageEnd()
+        if result.success is not None:
+            return result.success
+        raise TApplicationException(TApplicationException.MISSING_RESULT, "add_edge_in failed: unknown result")
+
 
 class Processor(Iface, TProcessor):
     def __init__(self, handler):
@@ -444,6 +545,7 @@ class Processor(Iface, TProcessor):
         self._processMap["ping"] = Processor.process_ping
         self._processMap["add_upd_vertex"] = Processor.process_add_upd_vertex
         self._processMap["add_upd_edge"] = Processor.process_add_upd_edge
+        self._processMap["add_upd_edge2"] = Processor.process_add_upd_edge2
         self._processMap["get_vertex"] = Processor.process_get_vertex
         self._processMap["get_edge"] = Processor.process_get_edge
         self._processMap["del_vertex"] = Processor.process_del_vertex
@@ -451,6 +553,7 @@ class Processor(Iface, TProcessor):
         self._processMap["list_edges"] = Processor.process_list_edges
         self._processMap["list_vertices"] = Processor.process_list_vertices
         self._processMap["list_neighbors"] = Processor.process_list_neighbors
+        self._processMap["add_edge_in"] = Processor.process_add_edge_in
 
     def process(self, iprot, oprot):
         (name, type, seqid) = iprot.readMessageBegin()
@@ -496,6 +599,9 @@ class Processor(Iface, TProcessor):
             msg_type = TMessageType.REPLY
         except (TTransport.TTransportException, KeyboardInterrupt, SystemExit):
             raise
+        except NotFound as ex:
+            msg_type = TMessageType.REPLY
+            result.ex = ex
         except Exception as ex:
             msg_type = TMessageType.EXCEPTION
             logging.exception(ex)
@@ -523,6 +629,28 @@ class Processor(Iface, TProcessor):
             logging.exception(ex)
             result = TApplicationException(TApplicationException.INTERNAL_ERROR, 'Internal error')
         oprot.writeMessageBegin("add_upd_edge", msg_type, seqid)
+        result.write(oprot)
+        oprot.writeMessageEnd()
+        oprot.trans.flush()
+
+    def process_add_upd_edge2(self, seqid, iprot, oprot):
+        args = add_upd_edge2_args()
+        args.read(iprot)
+        iprot.readMessageEnd()
+        result = add_upd_edge2_result()
+        try:
+            result.success = self._handler.add_upd_edge2(args.v1, args.v2, args.peso, args.bi_flag, args.first_flag)
+            msg_type = TMessageType.REPLY
+        except (TTransport.TTransportException, KeyboardInterrupt, SystemExit):
+            raise
+        except NotFound as ex:
+            msg_type = TMessageType.REPLY
+            result.ex = ex
+        except Exception as ex:
+            msg_type = TMessageType.EXCEPTION
+            logging.exception(ex)
+            result = TApplicationException(TApplicationException.INTERNAL_ERROR, 'Internal error')
+        oprot.writeMessageBegin("add_upd_edge2", msg_type, seqid)
         result.write(oprot)
         oprot.writeMessageEnd()
         oprot.trans.flush()
@@ -677,6 +805,25 @@ class Processor(Iface, TProcessor):
             logging.exception(ex)
             result = TApplicationException(TApplicationException.INTERNAL_ERROR, 'Internal error')
         oprot.writeMessageBegin("list_neighbors", msg_type, seqid)
+        result.write(oprot)
+        oprot.writeMessageEnd()
+        oprot.trans.flush()
+
+    def process_add_edge_in(self, seqid, iprot, oprot):
+        args = add_edge_in_args()
+        args.read(iprot)
+        iprot.readMessageEnd()
+        result = add_edge_in_result()
+        try:
+            result.success = self._handler.add_edge_in(args.v1, args.v2, args.peso, args.bi_flag)
+            msg_type = TMessageType.REPLY
+        except (TTransport.TTransportException, KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as ex:
+            msg_type = TMessageType.EXCEPTION
+            logging.exception(ex)
+            result = TApplicationException(TApplicationException.INTERNAL_ERROR, 'Internal error')
+        oprot.writeMessageBegin("add_edge_in", msg_type, seqid)
         result.write(oprot)
         oprot.writeMessageEnd()
         oprot.trans.flush()
@@ -868,14 +1015,17 @@ class add_upd_vertex_result(object):
     """
     Attributes:
      - success
+     - ex
     """
 
     thrift_spec = (
         (0, TType.STRING, 'success', 'UTF8', None, ),  # 0
+        (1, TType.STRUCT, 'ex', (NotFound, NotFound.thrift_spec), None, ),  # 1
     )
 
-    def __init__(self, success=None,):
+    def __init__(self, success=None, ex=None,):
         self.success = success
+        self.ex = ex
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -891,6 +1041,12 @@ class add_upd_vertex_result(object):
                     self.success = iprot.readString().decode('utf-8') if sys.version_info[0] == 2 else iprot.readString()
                 else:
                     iprot.skip(ftype)
+            elif fid == 1:
+                if ftype == TType.STRUCT:
+                    self.ex = NotFound()
+                    self.ex.read(iprot)
+                else:
+                    iprot.skip(ftype)
             else:
                 iprot.skip(ftype)
             iprot.readFieldEnd()
@@ -904,6 +1060,10 @@ class add_upd_vertex_result(object):
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.STRING, 0)
             oprot.writeString(self.success.encode('utf-8') if sys.version_info[0] == 2 else self.success)
+            oprot.writeFieldEnd()
+        if self.ex is not None:
+            oprot.writeFieldBegin('ex', TType.STRUCT, 1)
+            self.ex.write(oprot)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -1065,6 +1225,186 @@ class add_upd_edge_result(object):
             oprot.trans.write(oprot._fast_encode(self, (self.__class__, self.thrift_spec)))
             return
         oprot.writeStructBegin('add_upd_edge_result')
+        if self.success is not None:
+            oprot.writeFieldBegin('success', TType.STRING, 0)
+            oprot.writeString(self.success.encode('utf-8') if sys.version_info[0] == 2 else self.success)
+            oprot.writeFieldEnd()
+        if self.ex is not None:
+            oprot.writeFieldBegin('ex', TType.STRUCT, 1)
+            self.ex.write(oprot)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+
+
+class add_upd_edge2_args(object):
+    """
+    Attributes:
+     - v1
+     - v2
+     - peso
+     - bi_flag
+     - first_flag
+    """
+
+    thrift_spec = (
+        None,  # 0
+        (1, TType.I32, 'v1', None, None, ),  # 1
+        (2, TType.I32, 'v2', None, None, ),  # 2
+        (3, TType.DOUBLE, 'peso', None, None, ),  # 3
+        (4, TType.BOOL, 'bi_flag', None, None, ),  # 4
+        (5, TType.BOOL, 'first_flag', None, None, ),  # 5
+    )
+
+    def __init__(self, v1=None, v2=None, peso=None, bi_flag=None, first_flag=None,):
+        self.v1 = v1
+        self.v2 = v2
+        self.peso = peso
+        self.bi_flag = bi_flag
+        self.first_flag = first_flag
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, (self.__class__, self.thrift_spec))
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 1:
+                if ftype == TType.I32:
+                    self.v1 = iprot.readI32()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.I32:
+                    self.v2 = iprot.readI32()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 3:
+                if ftype == TType.DOUBLE:
+                    self.peso = iprot.readDouble()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 4:
+                if ftype == TType.BOOL:
+                    self.bi_flag = iprot.readBool()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 5:
+                if ftype == TType.BOOL:
+                    self.first_flag = iprot.readBool()
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, (self.__class__, self.thrift_spec)))
+            return
+        oprot.writeStructBegin('add_upd_edge2_args')
+        if self.v1 is not None:
+            oprot.writeFieldBegin('v1', TType.I32, 1)
+            oprot.writeI32(self.v1)
+            oprot.writeFieldEnd()
+        if self.v2 is not None:
+            oprot.writeFieldBegin('v2', TType.I32, 2)
+            oprot.writeI32(self.v2)
+            oprot.writeFieldEnd()
+        if self.peso is not None:
+            oprot.writeFieldBegin('peso', TType.DOUBLE, 3)
+            oprot.writeDouble(self.peso)
+            oprot.writeFieldEnd()
+        if self.bi_flag is not None:
+            oprot.writeFieldBegin('bi_flag', TType.BOOL, 4)
+            oprot.writeBool(self.bi_flag)
+            oprot.writeFieldEnd()
+        if self.first_flag is not None:
+            oprot.writeFieldBegin('first_flag', TType.BOOL, 5)
+            oprot.writeBool(self.first_flag)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+
+
+class add_upd_edge2_result(object):
+    """
+    Attributes:
+     - success
+     - ex
+    """
+
+    thrift_spec = (
+        (0, TType.STRING, 'success', 'UTF8', None, ),  # 0
+        (1, TType.STRUCT, 'ex', (NotFound, NotFound.thrift_spec), None, ),  # 1
+    )
+
+    def __init__(self, success=None, ex=None,):
+        self.success = success
+        self.ex = ex
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, (self.__class__, self.thrift_spec))
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 0:
+                if ftype == TType.STRING:
+                    self.success = iprot.readString().decode('utf-8') if sys.version_info[0] == 2 else iprot.readString()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 1:
+                if ftype == TType.STRUCT:
+                    self.ex = NotFound()
+                    self.ex.read(iprot)
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, (self.__class__, self.thrift_spec)))
+            return
+        oprot.writeStructBegin('add_upd_edge2_result')
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.STRING, 0)
             oprot.writeString(self.success.encode('utf-8') if sys.version_info[0] == 2 else self.success)
@@ -2032,6 +2372,161 @@ class list_neighbors_result(object):
         if self.ex is not None:
             oprot.writeFieldBegin('ex', TType.STRUCT, 1)
             self.ex.write(oprot)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+
+
+class add_edge_in_args(object):
+    """
+    Attributes:
+     - v1
+     - v2
+     - peso
+     - bi_flag
+    """
+
+    thrift_spec = (
+        None,  # 0
+        (1, TType.I32, 'v1', None, None, ),  # 1
+        (2, TType.I32, 'v2', None, None, ),  # 2
+        (3, TType.DOUBLE, 'peso', None, None, ),  # 3
+        (4, TType.BOOL, 'bi_flag', None, None, ),  # 4
+    )
+
+    def __init__(self, v1=None, v2=None, peso=None, bi_flag=None,):
+        self.v1 = v1
+        self.v2 = v2
+        self.peso = peso
+        self.bi_flag = bi_flag
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, (self.__class__, self.thrift_spec))
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 1:
+                if ftype == TType.I32:
+                    self.v1 = iprot.readI32()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.I32:
+                    self.v2 = iprot.readI32()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 3:
+                if ftype == TType.DOUBLE:
+                    self.peso = iprot.readDouble()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 4:
+                if ftype == TType.BOOL:
+                    self.bi_flag = iprot.readBool()
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, (self.__class__, self.thrift_spec)))
+            return
+        oprot.writeStructBegin('add_edge_in_args')
+        if self.v1 is not None:
+            oprot.writeFieldBegin('v1', TType.I32, 1)
+            oprot.writeI32(self.v1)
+            oprot.writeFieldEnd()
+        if self.v2 is not None:
+            oprot.writeFieldBegin('v2', TType.I32, 2)
+            oprot.writeI32(self.v2)
+            oprot.writeFieldEnd()
+        if self.peso is not None:
+            oprot.writeFieldBegin('peso', TType.DOUBLE, 3)
+            oprot.writeDouble(self.peso)
+            oprot.writeFieldEnd()
+        if self.bi_flag is not None:
+            oprot.writeFieldBegin('bi_flag', TType.BOOL, 4)
+            oprot.writeBool(self.bi_flag)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+
+
+class add_edge_in_result(object):
+    """
+    Attributes:
+     - success
+    """
+
+    thrift_spec = (
+        (0, TType.STRING, 'success', 'UTF8', None, ),  # 0
+    )
+
+    def __init__(self, success=None,):
+        self.success = success
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, (self.__class__, self.thrift_spec))
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 0:
+                if ftype == TType.STRING:
+                    self.success = iprot.readString().decode('utf-8') if sys.version_info[0] == 2 else iprot.readString()
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, (self.__class__, self.thrift_spec)))
+            return
+        oprot.writeStructBegin('add_edge_in_result')
+        if self.success is not None:
+            oprot.writeFieldBegin('success', TType.STRING, 0)
+            oprot.writeString(self.success.encode('utf-8') if sys.version_info[0] == 2 else self.success)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()

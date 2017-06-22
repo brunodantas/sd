@@ -16,7 +16,10 @@ from thrift.transport import TSocket
 from thrift.transport import TTransport
 from thrift.protocol import TBinaryProtocol
 from thrift.server import TServer
+import hashlib
 
+server_qty = 1
+server_index = 0
 
 class GraphHandler:
 	def __init__(self):
@@ -24,6 +27,7 @@ class GraphHandler:
 		self.al = dict() #adjacency list
 		self.lock = threading.Lock()
 		self.rwlock = RWLock()
+		self.interfaces = dict() #for talking with other servers
 		# if os.path.isfile("graph.pickle"):
 		# 	with open('graph.pickle', 'rb') as f:
 		# 		self.al = pickle.load(f)
@@ -35,54 +39,143 @@ class GraphHandler:
 		# 	print("created graph.pickle")
 
 
+	def init_interface(self, server):
+		p = 9000 + server
+		transport = TSocket.TSocket('localhost', p)
+		# Buffering is critical. Raw sockets are very slow
+		transport = TTransport.TBufferedTransport(transport)
+		# Wrap in a protocol
+		protocol = TBinaryProtocol.TBinaryProtocol(transport)
+		# Create a client to use the protocol encoder
+		client = Graph.Client(protocol)
+		# Connect!
+		transport.open()
+		self.interfaces[server] = client
+		
+
+
+	def hash(self, vertex):
+		h = hashlib.md5(str(vertex).encode('utf-8')).hexdigest()
+		return int(h, 16) % server_qty
+
+
+	def check_remote(self, vertex):
+		server = self.hash(vertex)
+		if server != server_index:
+			try:
+				if server not in self.interfaces:
+					self.init_interface(server)
+				self.interfaces[server].ping()
+			except Exception as e:
+				print("error requesting server{}".format(server))
+				print(str(e))
+				x = NotFound()
+				x.dsc = "falha no servidor"
+				raise x
+		return server
+
+
 	def ping(self):
 		print('ping()')
 
+
 	def add_upd_vertex(self, nome, cor, desc, peso):
+		server = self.check_remote(nome)
+		if server != server_index:
+			print("add/update vertex {}: requesting server{}".format(nome,server))
+			res = self.interfaces[server].add_upd_vertex(nome, cor, desc, peso)
+			print(res)
+			return res
+
+		print("add/update vertex {}".format(nome))
 		self.rwlock.acquire_write()
 
 		if nome not in self.al:
 			self.al[nome] = Vertex(nome, cor, desc, peso)
-			res = "vertice criado"
+			res = "vertice {} criado".format(nome)
 		else:
 			self.al[nome].set_att(nome, cor, desc, peso)
-			res = "vertice alterado"
+			res = "vertice {} alterado".format(nome)
 
 		# with open('graph.pickle', 'wb') as f:
 		# 	pickle.dump(self.al,f)
 		self.rwlock.release()
 
+		print(res)
 		return res
 
 	def add_upd_edge(self, v1, v2, peso, bi_flag):
+		res = self.add_upd_edge2(v1, v2, peso, bi_flag, True)
+		if bi_flag:
+			self.add_upd_edge2(v2, v1, peso, bi_flag, False)
+		return res
+
+	def add_upd_edge2(self, v1, v2, peso, bi_flag, first_flag):
+		server = self.check_remote(v1)
+		if server != server_index:
+			print("add/update edge {},{}: requesting server{}".format(v1,v2,server))
+			res = self.interfaces[server].add_upd_edge2(v1, v2, peso, bi_flag, first_flag)
+			print(res)
+			return res
+
+		print("add/update edge {},{}".format(v1,v2))
+
+		if first_flag:
+			try:
+				self.get_vertex(v1)
+				self.get_vertex(v2)
+			except Exception as e:
+				print(str(e))
+				raise e
+
 		self.rwlock.acquire_write()
-
-		if v1 not in self.al or v2 not in self.al:
-			x = NotFound()
-			x.dsc = "vertice não encontrado"
-			self.rwlock.release()
-			raise x
-
 		ver1 = self.al[v1]
-		ver2 = self.al[v2]
 		if v2 not in ver1.edges_out:
 			ver1.edges_out[v2] = Edge(v1, v2, peso, bi_flag)
-			ver2.edges_in[v1] = ver1.edges_out[v2]
-			res = "aresta criada"
+			self.rwlock.release()
+			self.add_edge_in(v1, v2, peso, bi_flag)
+			res = "aresta {},{} criada".format(v1,v2)
 		else:
 			ver1.edges_out[v2].set_att(v1, v2, peso, bi_flag)
-			res = "aresta alterada"
-		if bi_flag:
-				ver1.edges_in[v2] = ver1.edges_out[v2]
-				ver2.edges_out[v1] = ver1.edges_out[v2]
+			self.rwlock.release()
+			res = "aresta {},{} alterada".format(v1,v2)
+		# if bi_flag:
+		# 	print(ver1.edges_out[v2])
+		# 	self.rwlock.acquire_write()
+		# 	ver1.edges_in[v2] = ver1.edges_out[v2]
+		# 	self.rwlock.release()
+		# 	self.add_edge_bi(v1, v2, peso, bi_flag)
+
 		# with open('graph.pickle', 'wb') as f:
 		# 		pickle.dump(self.al,f)
 
-		self.rwlock.release()
-
+		print(res)
 		return res
 
+
+	def add_edge_in(self, v1, v2, peso, bi_flag):
+		server = self.check_remote(v2)
+		if server != server_index:
+			print("edge_in {},{}: requesting server{}".format(v1,v2,server))
+			res = self.interfaces[server].add_edge_in(v1, v2, peso, bi_flag)
+			return res
+		print("edge_in {},{}".format(v1,v2))
+		self.rwlock.acquire_write()
+		ver2 = self.al[v2]
+		ver2.edges_in[v1] = Edge(v1, v2, peso, bi_flag)
+		self.rwlock.release()
+		return "ok"
+
+
 	def get_vertex(self, v):
+		server = self.check_remote(v)
+		if server != server_index:
+			print("get vertex {}: requesting server{}".format(v,server))
+			res = self.interfaces[server].get_vertex(v)
+			print(res)
+			return res
+
+		print("get vertex {}".format(v))
 		self.rwlock.acquire_read()
 
 		#time.sleep(5)
@@ -90,24 +183,44 @@ class GraphHandler:
 			x = NotFound()
 			x.dsc = "vertice não encontrado"
 			self.rwlock.release()
+			print(x.dsc)
 			raise x
-
+		res = str(self.al[v])
 		self.rwlock.release()
-		return str(self.al[v])
+		print(res)
+		return res
 
 	def get_edge(self, v1, v2):
+		server = self.check_remote(v1)
+		if server != server_index:
+			print("get edge {},{}: requesting server{}".format(v1,v2,server))
+			res = self.interfaces[server].get_edge(v1,v2)
+			print(res)
+			return res
+
+		print("get edge {},{}".format(v1,v2))
 		self.rwlock.acquire_read()
 
-		if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
+		if v1 not in self.al or v2 not in self.al[v1].edges_out:
 			x = NotFound()
 			x.dsc = "aresta não encontrada"
 			self.rwlock.release()
+			print(str(x))
 			raise x
-
+		res = str(self.al[v1].edges_out[v2])
 		self.rwlock.release()
-		return str(self.al[v1].edges_out[v2])
+		print(res)
+		return res
 
 	def del_vertex(self, v):
+		server = self.check_remote(v)
+		if server != server_index:
+			print("delete vertex {}: requesting server{}".format(v,server))
+			res = self.interfaces[server].del_vertex(v)
+			print(res)
+			return res
+
+		print("delete vertex {}".format(v))
 		self.rwlock.acquire_read()
 
 		if v not in self.al:
@@ -140,6 +253,13 @@ class GraphHandler:
 		return "vertice deletado"
 
 	def del_edge(self, v1, v2):
+		server = self.check_remote(v1)
+		if server != server_index:
+			print("delete edge {},{}: requesting server{}".format(v1,v2,server))
+			res = self.interfaces[server].get_edge(v1,v2)
+			print(res)
+			return res
+
 		self.rwlock.acquire_read()
 
 		if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
@@ -164,6 +284,14 @@ class GraphHandler:
 		return "aresta deletada"
 
 	def list_edges(self, v):
+		server = self.check_remote(v)
+		if server != server_index:
+			print("list edges from vertex {}: requesting server{}".format(v,server))
+			res = self.interfaces[server].list_edges(v)
+			print(res)
+			return res
+
+		print("list edges from vertex {}".format(v))
 		self.rwlock.acquire_read()
 
 		if v not in self.al:
@@ -172,22 +300,44 @@ class GraphHandler:
 			self.rwlock.release()
 			raise x
 
+		res = str([self.al[v].edges_out[x] for x in self.al[v].edges_out])
 		self.rwlock.release()
-		return str([self.al[v].edges_out[x] for x in self.al[v].edges_out])
+		print(res)
+		return res
 
 	def list_vertices(self, v1, v2):
-		self.rwlock.acquire_read()
-
-		if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
-			x = NotFound()
-			x.dsc = "aresta não encontrada"
+		server = self.check_remote(v1)
+		if server != server_index:
+			print("list vertices of edge {},{}: requesting server{}".format(v1,v2,server))
+			self.interfaces[server].get_edge(v1,v2)
+			res = [self.interfaces[server].get_vertex(v1)]
+		else:
+			print("list vertices of edge {},{}".format(v1,v2))
+			self.rwlock.acquire_read()
+			self.get_edge(v1,v2)
+			res = [self.get_vertex(v1)]
 			self.rwlock.release()
-			raise x
 
-		self.rwlock.release()
-		return str((self.al[v1], self.al[v2]))
+		server = self.check_remote(v2)
+		if server != server_index:
+			res.append(self.interfaces[server].get_vertex(v2))
+		else:
+			self.rwlock.acquire_read()
+			res.append(self.get_vertex(v2))
+			self.rwlock.release()
+
+		print(res)
+		return str(res)
 
 	def list_neighbors(self, v):
+		server = self.check_remote(v)
+		if server != server_index:
+			print("list neighbors of vertex {}: requesting server{}".format(v,server))
+			res = self.interfaces[server].list_neighbors(v)
+			print(res)
+			return res
+
+		print("list neighbors of vertex {}".format(v))
 		self.rwlock.acquire_read()
 
 		if v not in self.al:
@@ -196,8 +346,10 @@ class GraphHandler:
 			self.rwlock.release()
 			raise x
 
+		res = str([x for x in self.al[v].edges_out])
 		self.rwlock.release()
-		return str([self.al[x] for x in self.al[v].edges_out])
+		print(res)
+		return res
 
 
 class Vertex:
@@ -235,20 +387,25 @@ class Edge:
 
 
 if __name__ == '__main__':
-    handler = GraphHandler()
-    processor = Graph.Processor(handler)
-    transport = TSocket.TServerSocket(port=9090)
-    tfactory = TTransport.TBufferedTransportFactory()
-    pfactory = TBinaryProtocol.TBinaryProtocolFactory()
+	global server_index
+	global server_qty
+	server_index = int(sys.argv[1])
+	server_qty = int(sys.argv[2])
+	p = 9000 + server_index
+	handler = GraphHandler()
+	processor = Graph.Processor(handler)
+	transport = TSocket.TServerSocket(port=p)
+	tfactory = TTransport.TBufferedTransportFactory()
+	pfactory = TBinaryProtocol.TBinaryProtocolFactory()
 
-    server = TServer.TThreadedServer(processor, transport, tfactory, pfactory)
+	server = TServer.TThreadedServer(processor, transport, tfactory, pfactory)
 
-    # You could do one of these for a multithreaded server
-    # server = TServer.TThreadedServer(
-    #     processor, transport, tfactory, pfactory)
-    # server = TServer.TThreadPoolServer(
-    #     processor, transport, tfactory, pfactory)
+	# You could do one of these for a multithreaded server
+	# server = TServer.TThreadedServer(
+	#     processor, transport, tfactory, pfactory)
+	# server = TServer.TThreadPoolServer(
+	#     processor, transport, tfactory, pfactory)
 
-    print('Starting the server...')
-    server.serve()
-    print('done.')
+	print('Starting server on port {}...'.format(p))
+	server.serve()
+	print('done.')

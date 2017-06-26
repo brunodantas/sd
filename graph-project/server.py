@@ -18,8 +18,6 @@ from thrift.protocol import TBinaryProtocol
 from thrift.server import TServer
 import hashlib
 
-server_qty = 1
-server_index = 0
 
 class GraphHandler:
 	def __init__(self):
@@ -105,35 +103,34 @@ class GraphHandler:
 		return res
 
 	def add_upd_edge(self, v1, v2, peso, bi_flag):
-		res = self.add_upd_edge2(v1, v2, peso, bi_flag, True)
+		try:
+			self.get_vertex(v1)
+			self.get_vertex(v2)
+		except Exception as e:
+			print(str(e))
+			raise e
+		res = self.add_upd_edge2(v1, v2, peso, bi_flag)
+		self.add_edge_in(v1, v2, peso, bi_flag)
 		if bi_flag:
-			self.add_upd_edge2(v2, v1, peso, bi_flag, False)
+			self.add_upd_edge2(v2, v1, peso, bi_flag)
+			self.add_edge_in(v2, v1, peso, bi_flag)
 		return res
 
-	def add_upd_edge2(self, v1, v2, peso, bi_flag, first_flag):
+	def add_upd_edge2(self, v1, v2, peso, bi_flag):
 		server = self.check_remote(v1)
 		if server != server_index:
 			print("add/update edge {},{}: requesting server{}".format(v1,v2,server))
-			res = self.interfaces[server].add_upd_edge2(v1, v2, peso, bi_flag, first_flag)
+			res = self.interfaces[server].add_upd_edge2(v1, v2, peso, bi_flag)
 			print(res)
 			return res
 
 		print("add/update edge {},{}".format(v1,v2))
-
-		if first_flag:
-			try:
-				self.get_vertex(v1)
-				self.get_vertex(v2)
-			except Exception as e:
-				print(str(e))
-				raise e
 
 		self.rwlock.acquire_write()
 		ver1 = self.al[v1]
 		if v2 not in ver1.edges_out:
 			ver1.edges_out[v2] = Edge(v1, v2, peso, bi_flag)
 			self.rwlock.release()
-			self.add_edge_in(v1, v2, peso, bi_flag)
 			res = "aresta {},{} criada".format(v1,v2)
 		else:
 			ver1.edges_out[v2].set_att(v1, v2, peso, bi_flag)
@@ -213,6 +210,28 @@ class GraphHandler:
 		return res
 
 	def del_vertex(self, v):
+		try:
+			edges_out = eval( self.list_neighbors(v))
+			edges_in = eval( self.list_neighbors_in(v))
+		except Exception as e:
+			print(str(e))
+			raise e
+
+		for v2 in edges_out:
+			try: self.del_edge2(v,v2)
+			except: pass
+			try: self.del_edge_in(v,v2)
+			except: pass
+		for v2 in edges_in:
+			try: self.del_edge2(v2,v)
+			except: pass
+			try: self.del_edge_in(v2,v)
+			except: pass
+
+		res = self.del_vertex2(v)
+		return res
+
+	def del_vertex2(self, v):
 		server = self.check_remote(v)
 		if server != server_index:
 			print("delete vertex {}: requesting server{}".format(v,server))
@@ -232,37 +251,45 @@ class GraphHandler:
 		self.rwlock.release()
 		self.rwlock.acquire_write()
 
-		ver = self.al[v]
-		outs = [x for x in ver.edges_out]
-		ins = [x for x in ver.edges_in]
-		for o in outs:
-			try:
-				self.del_edge(v,o)
-			except:
-				pass
-		for i in ins:
-			try:
-				self.del_edge(i,v)
-			except:
-				pass
 		del self.al[v]
 		# with open('graph.pickle', 'wb') as f:
 		# 		pickle.dump(self.al,f)
 
 		self.rwlock.release()
-		return "vertice deletado"
+		res = "vertice {} deletado".format(v)
+		print(res)
+		return res
 
 	def del_edge(self, v1, v2):
+		try:
+			bi_flag = eval( self.get_edge(v1,v2) + "[-1]")
+			res = self.del_edge2(v1, v2)
+		except Exception as e:
+			print(str(e))
+			raise e
+
+		try:
+			self.del_edge_in(v1, v2)
+			if bi_flag:
+				print("delete edge {},{} (bidirectional)".format(v2,v1))
+				self.del_edge2(v2, v1)
+				self.del_edge_in(v2, v1)
+		except: pass
+
+		return res
+
+	def del_edge2(self, v1, v2):
 		server = self.check_remote(v1)
 		if server != server_index:
 			print("delete edge {},{}: requesting server{}".format(v1,v2,server))
-			res = self.interfaces[server].get_edge(v1,v2)
+			res = self.interfaces[server].del_edge2(v1,v2)
 			print(res)
 			return res
 
+		print("delete edge {},{}".format(v1,v2))
 		self.rwlock.acquire_read()
 
-		if v1 not in self.al or v2 not in self.al or v2 not in self.al[v1].edges_out:
+		if v1 not in self.al or v2 not in self.al[v1].edges_out:
 			x = NotFound()
 			x.dsc = "aresta não encontrada"
 			self.rwlock.release()
@@ -271,17 +298,27 @@ class GraphHandler:
 		self.rwlock.release()
 		self.rwlock.acquire_write()
 
-		bi = self.al[v1].edges_out[v2].bi_flag
-		del self.al[v1].edges_out[v2]
-		del self.al[v2].edges_in[v1]
-		if bi:
-			del self.al[v2].edges_out[v1]
-			del self.al[v1].edges_in[v2]
+		self.al[v1].edges_out.pop(v2,None)
 		# with open('graph.pickle', 'wb') as f:
 		# 		pickle.dump(self.al,f)
 
 		self.rwlock.release()
-		return "aresta deletada"
+		res = "aresta {},{} deletada".format(v1,v2)
+		print(res)
+		return res
+
+	def del_edge_in(self, v1, v2):
+		server = self.check_remote(v2)
+		if server != server_index:
+			print("del edge_in {},{}: requesting server{}".format(v1,v2,server))
+			res = self.interfaces[server].del_edge_in(v1, v2)
+			return res
+		print("edge_in {},{}".format(v1,v2))
+		self.rwlock.acquire_write()
+		ver2 = self.al[v2]
+		ver2.edges_in.pop(v1,None)
+		self.rwlock.release()
+		return "ok"
 
 	def list_edges(self, v):
 		server = self.check_remote(v)
@@ -350,6 +387,68 @@ class GraphHandler:
 		self.rwlock.release()
 		print(res)
 		return res
+
+	def list_neighbors_in(self,v):
+		server = self.check_remote(v)
+		if server != server_index:
+			print("list neighbors_in of vertex {}: requesting server{}".format(v,server))
+			res = self.interfaces[server].list_neighbors_in(v)
+			print(res)
+			return res
+
+		print("list neighbors_in of vertex {}".format(v))
+		self.rwlock.acquire_read()
+
+		if v not in self.al:
+			x = NotFound()
+			x.dsc = "vertice não encontrado"
+			self.rwlock.release()
+			raise x
+
+		res = str([x for x in self.al[v].edges_in])
+		self.rwlock.release()
+		print(res)
+		return res
+
+	#dijkstra
+	def shortest_path(self,v1,v2):
+		Q = [v1]
+		dist = dict()
+		prev = dict()
+		visited = dict()
+		dist[v1] = 0
+
+		while Q != []:
+			u = Q.pop(0)
+			visited[u] = 1
+			neighbors = eval(self.list_neighbors(u))
+			for n in neighbors:
+				edge = eval(self.get_edge(u,n))
+				length = edge[2]
+				alt = dist[u] + length
+				if n not in dist or alt < dist[n]:
+					dist[n] = alt
+					prev[n] = u
+				if n not in visited:
+					Q.append(n)
+					Q.sort()
+
+		if(v2 not in dist):
+			res = "nao existe caminho entre {} e {}".format(v1,v2)
+		else:
+			u = v2
+			path = []
+			while u != v1:
+				path.append(u)
+				u = prev[u]
+			path.append(v1)
+			res = "menor caminho: {}\ndistancia total: {}".format(path[::-1],dist[v2])
+		print(res)
+		return res
+
+
+
+
 
 
 class Vertex:

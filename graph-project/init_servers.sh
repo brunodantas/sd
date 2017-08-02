@@ -1,8 +1,9 @@
 #!/bin/bash
 pkill -P $$
-n=$1
-for ((i=0;i<n;i++));
+clusters=$1
+replicas=3
+for ((i=0;i<clusters*replicas;i++));
 do
-	echo "python3 server.py $i $n"
-	xterm -title "server$i" -hold -e "python3 server.py $i $n" &
+	echo "python3 server.py $i $clusters"
+	xterm -title "server$i" -hold -e "python3 server.py $i $clusters" &
 done

@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 # -*- coding: UTF-8 -*-
 
 import glob
@@ -17,15 +18,17 @@ from thrift.transport import TTransport
 from thrift.protocol import TBinaryProtocol
 from thrift.server import TServer
 import hashlib
+from pysyncobj import SyncObj
+from pysyncobj.batteries import ReplCounter, ReplDict
 
-
-class GraphHandler:
-	def __init__(self):
+class GraphHandler(SyncObj):
+	def __init__(self, my_addr, partners_addrs):
 		self.log = {}
-		self.al = dict() #adjacency list
+		self.al = ReplDict() #adjacency list
 		self.lock = threading.Lock()
 		self.rwlock = RWLock()
 		self.interfaces = dict() #for talking with other servers
+		syncObj = SyncObj(my_addr, partners_addrs, consumers=[self.al])
 		# if os.path.isfile("graph.pickle"):
 		# 	with open('graph.pickle', 'rb') as f:
 		# 		self.al = pickle.load(f)
@@ -37,9 +40,8 @@ class GraphHandler:
 		# 	print("created graph.pickle")
 
 
-	def init_interface(self, server):
-		p = 9000 + server
-		transport = TSocket.TSocket('localhost', p)
+	def init_interface(self, port):
+		transport = TSocket.TSocket('localhost', port)
 		# Buffering is critical. Raw sockets are very slow
 		transport = TTransport.TBufferedTransport(transport)
 		# Wrap in a protocol
@@ -48,28 +50,39 @@ class GraphHandler:
 		client = Graph.Client(protocol)
 		# Connect!
 		transport.open()
-		self.interfaces[server] = client
+		self.interfaces[port] = client
 		
-
 
 	def hash(self, vertex):
 		h = hashlib.md5(str(vertex).encode('utf-8')).hexdigest()
-		return int(h, 16) % server_qty
+		return int(h, 16) % cluster_qty
 
 
 	def check_remote(self, vertex):
-		server = self.hash(vertex)
-		if server != server_index:
-			try:
-				if server not in self.interfaces:
-					self.init_interface(server)
-				self.interfaces[server].ping()
-			except Exception as e:
-				print("error requesting server{}".format(server))
-				print(str(e))
+		cluster = self.hash(vertex)
+		server = server_index
+		if cluster != my_cluster:
+			for i in range(total_replicas):
+				server = self.check_replica(i,cluster)
+				if server != -1:
+					return server
+			if server == -1:
+				print("error requesting cluster{}".format(cluster))
 				x = NotFound()
 				x.dsc = "falha no servidor"
 				raise x
+		return server
+
+
+	def check_replica(self,replica,cluster):
+		server = get_server_port(cluster,replica)
+		try:
+			if server not in self.interfaces:
+				self.init_interface(server)
+			self.interfaces[server].ping()
+		except Exception as e:
+			print("server{} from cluster{} is unreachable".format(server%1000,cluster))
+			server = -1
 		return server
 
 
@@ -89,10 +102,10 @@ class GraphHandler:
 		self.rwlock.acquire_write()
 
 		if nome not in self.al:
-			self.al[nome] = Vertex(nome, cor, desc, peso)
+			self.al.set(nome,Vertex(nome, cor, desc, peso),sync=True)
 			res = "vertice {} criado".format(nome)
 		else:
-			self.al[nome].set_att(nome, cor, desc, peso)
+			self.al.set(nome,Vertex(nome, cor, desc, peso),sync=True)
 			res = "vertice {} alterado".format(nome)
 
 		# with open('graph.pickle', 'wb') as f:
@@ -116,6 +129,7 @@ class GraphHandler:
 			self.add_edge_in(v2, v1, peso, bi_flag)
 		return res
 
+
 	def add_upd_edge2(self, v1, v2, peso, bi_flag):
 		server = self.check_remote(v1)
 		if server != server_index:
@@ -130,10 +144,12 @@ class GraphHandler:
 		ver1 = self.al[v1]
 		if v2 not in ver1.edges_out:
 			ver1.edges_out[v2] = Edge(v1, v2, peso, bi_flag)
+			self.al.set(v1,ver1,sync=True)
 			self.rwlock.release()
 			res = "aresta {},{} criada".format(v1,v2)
 		else:
 			ver1.edges_out[v2].set_att(v1, v2, peso, bi_flag)
+			self.al.set(v1,ver1,sync=True)
 			self.rwlock.release()
 			res = "aresta {},{} alterada".format(v1,v2)
 		# if bi_flag:
@@ -149,7 +165,7 @@ class GraphHandler:
 		print(res)
 		return res
 
-
+	
 	def add_edge_in(self, v1, v2, peso, bi_flag):
 		server = self.check_remote(v2)
 		if server != server_index:
@@ -160,6 +176,7 @@ class GraphHandler:
 		self.rwlock.acquire_write()
 		ver2 = self.al[v2]
 		ver2.edges_in[v1] = Edge(v1, v2, peso, bi_flag)
+		self.al.set(v2,ver2,sync=True)
 		self.rwlock.release()
 		return "ok"
 
@@ -209,6 +226,7 @@ class GraphHandler:
 		print(res)
 		return res
 
+
 	def del_vertex(self, v):
 		try:
 			edges_out = eval( self.list_neighbors(v))
@@ -231,6 +249,7 @@ class GraphHandler:
 		res = self.del_vertex2(v)
 		return res
 
+
 	def del_vertex2(self, v):
 		server = self.check_remote(v)
 		if server != server_index:
@@ -251,7 +270,7 @@ class GraphHandler:
 		self.rwlock.release()
 		self.rwlock.acquire_write()
 
-		del self.al[v]
+		self.al.pop(v,sync=True)
 		# with open('graph.pickle', 'wb') as f:
 		# 		pickle.dump(self.al,f)
 
@@ -259,6 +278,7 @@ class GraphHandler:
 		res = "vertice {} deletado".format(v)
 		print(res)
 		return res
+
 
 	def del_edge(self, v1, v2):
 		try:
@@ -277,6 +297,7 @@ class GraphHandler:
 		except: pass
 
 		return res
+
 
 	def del_edge2(self, v1, v2):
 		server = self.check_remote(v1)
@@ -298,7 +319,9 @@ class GraphHandler:
 		self.rwlock.release()
 		self.rwlock.acquire_write()
 
-		self.al[v1].edges_out.pop(v2,None)
+		ver1 = self.al[v1]
+		ver1.edges_out.pop(v2,None)
+		self.al.set(v1,ver1,sync=True)
 		# with open('graph.pickle', 'wb') as f:
 		# 		pickle.dump(self.al,f)
 
@@ -306,6 +329,7 @@ class GraphHandler:
 		res = "aresta {},{} deletada".format(v1,v2)
 		print(res)
 		return res
+
 
 	def del_edge_in(self, v1, v2):
 		server = self.check_remote(v2)
@@ -317,6 +341,7 @@ class GraphHandler:
 		self.rwlock.acquire_write()
 		ver2 = self.al[v2]
 		ver2.edges_in.pop(v1,None)
+		self.al.set(v2,ver2,sync=True)
 		self.rwlock.release()
 		return "ok"
 
@@ -484,16 +509,29 @@ class Edge:
 		self.peso = peso
 		self.bi_flag = bi_flag
 
+get_port = lambda cluster,server: 2000 + 1000 * cluster + server
+get_server_port = lambda cluster,replica: 9000 + total_replicas * cluster + replica
 
 if __name__ == '__main__':
 	global server_index
-	global server_qty
+	global my_cluster
+	global cluster_qty #replicated clusters
+	global total_replicas
+	total_replicas = 3
 	server_index = int(sys.argv[1])
-	server_qty = int(sys.argv[2])
-	p = 9000 + server_index
-	handler = GraphHandler()
+	cluster_qty = int(sys.argv[2])
+	my_cluster = server_index // total_replicas
+
+	#replication:
+	my_port = get_port(my_cluster,server_index % total_replicas)
+	partners = ['localhost:%d' % get_port(my_cluster, p) for p in range(total_replicas) if get_port(my_cluster,p) != my_port]
+	handler = GraphHandler('localhost:%d'%my_port, partners)
+	print('Replication on cluster {} via port {} with partners {}'.format(my_cluster,my_port,partners))
+
+	#server:
+	server_port = 9000 + server_index
 	processor = Graph.Processor(handler)
-	transport = TSocket.TServerSocket(port=p)
+	transport = TSocket.TServerSocket(port=server_port)
 	tfactory = TTransport.TBufferedTransportFactory()
 	pfactory = TBinaryProtocol.TBinaryProtocolFactory()
 
@@ -505,6 +543,6 @@ if __name__ == '__main__':
 	# server = TServer.TThreadPoolServer(
 	#     processor, transport, tfactory, pfactory)
 
-	print('Starting server on port {}...'.format(p))
+	print('Starting server on port {}...'.format(server_port))
 	server.serve()
 	print('done.')

@@ -8,11 +8,11 @@ sudo apt-get install python-all python-all-dev python-all-dbg
 generate files from thrift:
 thrift -r --gen py a.thrift
 
-rwlock implementation took from https://majid.info/blog/a-reader-writer-lock-for-python
-
+rwlock from https://majid.info/blog/a-reader-writer-lock-for-python
+PySyncObj from https://github.com/bakwc/PySyncObj
 
 running:
-> . init_servers.sh {server_qty}
-> python3 client.py {port_num} -> 9000 <= port_num <= 9000 + server_qty
+> . init_servers.sh {cluster_qty} (set for 3 replicated servers)
+> python3 client.py {port_num} (9000 <= port_num <= 9000 + server_qty)
 
 

@@ -1,4 +1,4 @@
-distributed graph database server using thrift + replication using PySyncObj (based on raft protocol)
+distributed graph database server using thrift + replication via PySyncObj (based on raft protocol)
 
 
 installing thrift:
@@ -11,8 +11,6 @@ sudo apt-get install python-all python-all-dev python-all-dbg
 generate files from thrift:
 thrift -r --gen py a.thrift
 
-rwlock from https://majid.info/blog/a-reader-writer-lock-for-python
-PySyncObj from https://github.com/bakwc/PySyncObj
 
 running:
 > . init_servers.sh {cluster_qty} (set for 3 replicated servers)
@@ -20,5 +18,11 @@ running:
 
 
 ex_filmebook initializes an example database
+> python3 ex_filmebook.py {port_num}
+
 filmebook is an example client
-> python3 client.py {port_num}
+> python3 filmebook.py {port_num}
+
+
+rwlock from https://majid.info/blog/a-reader-writer-lock-for-python
+PySyncObj from https://github.com/bakwc/PySyncObj

@@ -467,7 +467,7 @@ class GraphHandler(SyncObj):
 				path.append(u)
 				u = prev[u]
 			path.append(v1)
-			res = "menor caminho: {}\ndistancia total: {}".format(path[::-1],dist[v2])
+			res = str(path)
 		print(res)
 		return res
 
@@ -483,7 +483,7 @@ class Vertex:
 		self.edges_in = dict()
 
 	def __str__(self):
-		return "(%d, %d, %s, %s)" % (self.nome, self.cor, self.desc, self.peso)
+		return "(%d, %d, '%s', %s)" % (self.nome, self.cor, self.desc, self.peso)
 
 	__repr__ = __str__
 

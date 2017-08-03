@@ -1,3 +1,6 @@
+distributed graph database server using thrift + replication using PySyncObj (based on raft protocol)
+
+
 installing thrift:
 download, extract: http://www.apache.org/dyn/closer.cgi?path=/thrift/0.10.0/thrift-0.10.0.tar.gz
 ./configure
@@ -16,3 +19,6 @@ running:
 > python3 client.py {port_num} (9000 <= port_num <= 9000 + server_qty)
 
 
+ex_filmebook initializes an example database
+filmebook is an example client
+> python3 client.py {port_num}
